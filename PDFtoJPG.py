@@ -10,12 +10,13 @@ class ConversionThread(QThread):
     finished = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, pdf_path, output_folder, quality, prefix):
+    def __init__(self, pdf_path, output_folder, quality, prefix, resolution):
         super().__init__()
         self.pdf_path = pdf_path
         self.output_folder = output_folder
         self.quality = quality
         self.prefix = prefix
+        self.resolution = resolution
 
     def run(self):
         try:
@@ -24,10 +25,12 @@ class ConversionThread(QThread):
 
             for page_num in range(total_pages):
                 page = pdf_document.load_page(page_num)
-                pix = page.get_pixmap()
+                zoom = self.resolution  # 解像度を選択した倍率に設定
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat)
                 img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                 
-                quality = {'低': 60, '中': 80, '高': 95}[self.quality]
+                quality = {'低': 60, '中': 80, '高': 95, '超高': 100}[self.quality]
                 output_file = os.path.join(self.output_folder, f"{self.prefix}page_{page_num + 1}.jpg")
                 img.save(output_file, "JPEG", quality=quality)
 
@@ -69,9 +72,17 @@ class PDFtoJPGConverter(QMainWindow):
         quality_layout = QHBoxLayout()
         quality_layout.addWidget(QLabel('Quality:'))
         self.quality_combo = QComboBox()
-        self.quality_combo.addItems(['低', '中', '高'])
+        self.quality_combo.addItems(['低', '中', '高', '超高'])
         quality_layout.addWidget(self.quality_combo)
         layout.addLayout(quality_layout)
+
+        # Resolution setting
+        resolution_layout = QHBoxLayout()
+        resolution_layout.addWidget(QLabel('Resolution:'))
+        self.resolution_combo = QComboBox()
+        self.resolution_combo.addItems(['1x', '2x', '3x', '4x'])
+        resolution_layout.addWidget(self.resolution_combo)
+        layout.addLayout(resolution_layout)
 
         # Prefix setting
         prefix_layout = QHBoxLayout()
@@ -110,11 +121,13 @@ class PDFtoJPGConverter(QMainWindow):
         if not self.pdf_path or not self.output_folder:
             return
 
+        resolution = int(self.resolution_combo.currentText()[0])  # '1x' -> 1, '2x' -> 2, etc.
         self.conversion_thread = ConversionThread(
             self.pdf_path,
             self.output_folder,
             self.quality_combo.currentText(),
-            self.prefix_input.text()
+            self.prefix_input.text(),
+            resolution
         )
         self.conversion_thread.progress.connect(self.update_progress)
         self.conversion_thread.finished.connect(self.conversion_finished)
